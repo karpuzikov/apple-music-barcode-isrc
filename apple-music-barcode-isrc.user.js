@@ -2,7 +2,7 @@
 // @name          Apple Music Barcodes/ISRCs
 // @namespace     applemusic.barcode.isrc
 // @description   Get Barcodes/ISRCs/etc. from Apple Music pages
-// @version       0.21
+// @version       0.24
 // @match         https://music.apple.com/*
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
@@ -10,279 +10,1091 @@
 // ==/UserScript==
 
 (async () => {
-// for userscript managers that don't support @exclude-match
-if (document.location.pathname === '/includes/commerce/fetch-proxy.html') {
-  return
-}
+    'use strict';
 
-// Needs to attempt to use GM_xmlhttpRequest
-// 1. we need to set the origin header to any value, which you normally cannot do with fetch, because
-// 2. we may be running in the content script context instead of the page one if we're in Firefox
-async function fetchWrapper(url, options) {
-  if (window.GM_xmlhttpRequest) {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
-        ...options,
-        url,
-        onload(e) { resolve(e.response) },
-        onerror(e) { reject(e) },
-      })
-    })
-  } else {
-    const res = await fetch(url, options)
-    return await res.text()
-  }
-}
-
-// Very hacky way to find the token automatically when it changes
-let scriptToken
-try {
-  const configScript = document.querySelector('script[crossorigin]')
-  const scriptSrc = await fetchWrapper(configScript.src)
-  scriptToken = scriptSrc.match(/("|')(ey.*?)\1/)[2]
-} catch(e) {
-  alert(`error getting apple music token: ${e}`)
-}
-
-const token = scriptToken
-const baseURL = 'https://amp-api.music.apple.com/v1'
-
-function addSimple(content, node, parent) {
-  const elem = document.createElement(node)
-  elem.textContent = content
-  elem.style.userSelect = 'text'
-  parent.appendChild(elem)
-  return elem
-}
-
-async function getDatums() {
-  let results
-
-  const close = () => {
-    document.body.removeEventListener('keydown', escListener)
-    results.remove()
-  }
-
-  const escListener = (e) => {
-    if (e.key === 'Escape') {
-      close()
+    if (location.pathname === '/includes/commerce/fetch-proxy.html') {
+        return;
     }
-  }
 
-  try {
-    results = addSimple('Loading, press ESC to close...', 'div', document.body)
-    results.style.position = 'absolute'
-    results.style.inset = '30px'
-    results.style.zIndex = 2147483647
-    results.style.background = 'white'
-    results.style.color = 'black'
-    results.style.overflow = 'auto'
-    results.style.padding = '4px'
+    const BASE_URL = 'https://amp-api.music.apple.com/v1';
+    const Z_INDEX = 2147483647;
 
-    document.body.addEventListener('keydown', escListener)
+    let token = null;
+    let activeResults = null;
 
-    const albumId = document.location.pathname.split('/').reverse().find(p => /^\d+$/.test(p))
-    const country = document.location.pathname.split('/')[1]
-    const entryType = document.location.pathname.split('/')[2]
-    const url = `${baseURL}/catalog/${country}/${entryType}s/${albumId}`
+    const style = document.createElement('style');
 
-    const res = await fetchWrapper(url, { method: 'GET', mode: 'cors', credentials: 'include', headers: { Authorization: `Bearer ${token}`, Origin: new URL(baseURL).origin } })
-    const resJson = JSON.parse(res)
-    const albumsData = resJson.data
+    style.textContent = `
+        .amb-button {
+            position: fixed !important;
+            top: 4px !important;
+            left: 4px !important;
+            width: 18px !important;
+            height: 18px !important;
+            padding: 0 !important;
+            margin: 0 !important;
 
-    const albums = []
+            background: #171717 !important;
+            border: 2px solid #30d158 !important;
+            border-radius: 4px !important;
 
-    // albums
-    for (const albumData of albumsData.filter((item) => item.type === 'albums')) {
-      const album = {
-        name: albumData.attributes.name,
-        artist: albumData.attributes.artistName,
-        releaseDate: albumData.attributes.releaseDate,
-        label: albumData.attributes.recordLabel,
-        barcode: albumData.attributes.upc,
-        isMasteredForItunes: albumData.attributes.isMasteredForItunes,
-        audio: albumData.attributes.audioTraits,
-        copyright: albumData.attributes.copyright,
-        tracks: [],
-        differentDates: false,
-      }
+            cursor: pointer !important;
+            z-index: ${Z_INDEX} !important;
 
-      if (albumData.relationships.tracks) {
-        let tracksHaveDates = false
-        for (const track_data of albumData.relationships.tracks.data) {
-          const track = {
-            name: track_data.attributes.name,
-            artist: track_data.attributes.artistName,
-            composer: track_data.attributes.composerName,
-            disc: track_data.attributes.discNumber,
-            track: track_data.attributes.trackNumber,
-            isrc: track_data.attributes.isrc,
-            releaseDate: track_data.attributes.releaseDate,
-          }
-
-          if (track.releaseDate !== album.releaseDate) {
-            album.differentDates = true
-          }
-
-          if (!!track_data.attributes.releaseDate) {
-            tracksHaveDates = true
-          }
-
-          album.tracks.push(track)
+            box-shadow:
+                0 1px 4px rgba(0, 0, 0, 0.8),
+                inset 0 0 4px rgba(48, 209, 88, 0.25) !important;
         }
 
-        if (!tracksHaveDates) {
-          // no tracks have release dates, unset the different dates flag
-          album.differentDates = false
+        .amb-button:hover {
+            background: #30d158 !important;
         }
-      }
 
-      albums.push(album)
-    }
-
-    // music videos
-    for (const videoData of albumsData.filter((item) => item.type === 'music-videos')) {
-      const album = {
-        name: videoData.attributes.name,
-        artist: videoData.attributes.artistName,
-        releaseDate: videoData.attributes.releaseDate,
-        tracks: [{
-          name: videoData.attributes.name,
-          artist: videoData.attributes.artistName,
-          disc: 1,
-          track: 1,
-          isrc: videoData.attributes.isrc,
-          releaseDate: videoData.attributes.releaseDate,
-        }],
-        differentDates: false,
-      }
-
-      albums.push(album)
-    }
-
-    if (albums.length === 0) {
-      throw new Error('no albums or music videos found')
-    }
-
-    results.textContent = ''
-
-    for (const album of albums) {
-      addSimple(album.name, 'h1', results)
-      addSimple(album.artist, 'h2', results)
-      const albumDate = addSimple(`Release Date: ${album.releaseDate}`, 'p', results)
-      if (album.differentDates) {
-        albumDate.appendChild(document.createTextNode(' '))
-        const bold = document.createElement('b')
-        bold.style.color = '#c00'
-        bold.textContent = '(Some track dates differ)'
-        albumDate.appendChild(bold)
-      }
-      if (album.label !== undefined) {
-        addSimple(`Label: ${album.label}`, 'p', results)
-      }
-      if (album.barcode !== undefined) {
-        addSimple(`Barcode: ${album.barcode}`, 'p', results)
-      }
-      if (album.isMasteredForItunes !== undefined) {
-        addSimple(`Mastered for iTunes: ${album.isMasteredForItunes}`, 'p', results)
-      }
-      if (album.audio !== undefined) {
-        addSimple(`Audio: ${album.audio}`, 'p', results)
-      }
-      if (album.copyright !== undefined) {
-        addSimple(`Copyright: ${album.copyright}`, 'p', results)
-      }
-      const kepstinContainer = addSimple('', 'p', results)
-      const kepstinLink = addSimple('Submit to kepstin’s MagicISRC', 'a', kepstinContainer)
-      kepstinLink.target = '_blank'
-      // we intentionally don't use the `isrcM-T` format due to differences in how Apple Music formats some track lists
-      kepstinLink.href = 'https://magicisrc.kepstin.ca/?' + album.tracks.map((track, i) => `isrc${i+1}=${track.isrc}`).join('&')
-      kepstinLink.style.color = '#06c'
-      kepstinLink.style.textDecoration = 'underline'
-      // work around Apple Music's handling of links
-      kepstinLink.addEventListener('click', e => {
-        e.preventDefault()
-        e.stopPropagation()
-        window.open(e.target.href, e.target.target)
-      })
-
-      const hasMultipleDiscs = album.tracks.some(t => t.disc !== 1)
-      const hasComposers = album.tracks.some(t => t.composer !== undefined)
-
-      const table = addSimple('', 'table', results)
-      table.style.width = '100%'
-      table.style.borderCollapse = 'separate'
-      table.style.borderSpacing = '2px'
-      table.setAttribute('border', '1')
-      const thead = addSimple('', 'thead', table)
-      thead.style.fontWeight = 'bold'
-      const tr = addSimple('', 'tr', thead)
-      const t1 = addSimple('Track', 'td', tr)
-      t1.style.background = 'white'
-      t1.style.position = 'sticky'
-      t1.style.top = 0
-      const t2 = addSimple('Title', 'td', tr)
-      t2.style.background = 'white'
-      t2.style.position = 'sticky'
-      t2.style.top = 0
-      const t3 = addSimple('Artist', 'td', tr)
-      t3.style.background = 'white'
-      t3.style.position = 'sticky'
-      t3.style.top = 0
-      if (hasComposers) {
-        const t4 = addSimple('Composer', 'td', tr)
-        t4.style.background = 'white'
-        t4.style.position = 'sticky'
-        t4.style.top = 0
-      }
-      const t5 = addSimple('ISRC', 'td', tr)
-      t5.style.background = 'white'
-      t5.style.position = 'sticky'
-      t5.style.top = 0
-
-      if (album.differentDates) {
-        const t6 = addSimple('Date', 'td', tr)
-        t6.style.background = 'white'
-        t6.style.position = 'sticky'
-        t6.style.top = 0
-      }
-
-      const tbody = addSimple('', 'tbody', table)
-      for (const track of album.tracks) {
-        const tr = addSimple('', 'tr', tbody)
-        addSimple(hasMultipleDiscs ? `${track.disc}.${track.track}` : track.track, 'td', tr)
-        addSimple(track.name, 'td', tr)
-        addSimple(track.artist, 'td', tr)
-        if (hasComposers) {
-          addSimple(track.composer, 'td', tr)
+        .amb-overlay,
+        .amb-overlay * {
+            box-sizing: border-box !important;
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
         }
-        addSimple(track.isrc, 'td', tr)
-        if (album.differentDates) {
-          const trackDate = addSimple(track.releaseDate, 'td', tr)
-          if (track.releaseDate !== album.releaseDate) {
-            trackDate.style.fontWeight = 'bold'
-            trackDate.style.color = '#c00'
-          }
+
+        .amb-overlay {
+            position: fixed !important;
+            inset: 24px !important;
+            z-index: ${Z_INDEX} !important;
+
+            overflow: auto !important;
+            padding: 18px 22px !important;
+
+            background: #111113 !important;
+            color: #f2f2f7 !important;
+
+            border: 1px solid #3a3a3c !important;
+            border-radius: 12px !important;
+
+            box-shadow: 0 12px 50px rgba(0, 0, 0, 0.75) !important;
+
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Arial,
+                sans-serif !important;
+
+            font-size: 14px !important;
+            line-height: 1.45 !important;
+
+            cursor: text !important;
         }
-      }
+
+        .amb-overlay h1 {
+            margin: 0 0 4px 0 !important;
+            padding: 0 !important;
+            color: #ffffff !important;
+            font-size: 24px !important;
+            font-weight: 700 !important;
+            line-height: 1.25 !important;
+        }
+
+        .amb-overlay h2 {
+            margin: 0 0 18px 0 !important;
+            padding: 0 !important;
+            color: #b8b8bd !important;
+            font-size: 18px !important;
+            font-weight: 500 !important;
+            line-height: 1.3 !important;
+        }
+
+        .amb-overlay p {
+            margin: 6px 0 !important;
+            padding: 0 !important;
+            color: #e5e5ea !important;
+        }
+
+        .amb-overlay a {
+            color: #64d2ff !important;
+            text-decoration: underline !important;
+            cursor: pointer !important;
+        }
+
+        .amb-overlay a:hover {
+            color: #9ee3ff !important;
+        }
+
+        .amb-warning {
+            color: #ff6961 !important;
+            font-weight: 700 !important;
+        }
+
+        .amb-actions {
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin: 14px 0 8px 0 !important;
+        }
+
+        .amb-copy-button {
+            appearance: none !important;
+            padding: 7px 14px !important;
+            margin: 0 !important;
+
+            background: #2c2c2e !important;
+            color: #f2f2f7 !important;
+
+            border: 1px solid #48484a !important;
+            border-radius: 6px !important;
+
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                Arial,
+                sans-serif !important;
+
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            line-height: 1.2 !important;
+
+            cursor: pointer !important;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+
+        .amb-copy-button:hover {
+            background: #3a3a3c !important;
+            border-color: #636366 !important;
+        }
+
+        .amb-copy-button:active {
+            background: #48484a !important;
+        }
+
+        .amb-copy-button.amb-copied {
+            background: #1f6f3d !important;
+            border-color: #30d158 !important;
+            color: #ffffff !important;
+        }
+
+        .amb-table {
+            width: 100% !important;
+            margin: 8px 0 24px 0 !important;
+
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+
+            background: #18181a !important;
+            color: #f2f2f7 !important;
+
+            border: 1px solid #3a3a3c !important;
+            border-radius: 7px !important;
+
+            overflow: hidden !important;
+        }
+
+        .amb-table th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 1 !important;
+
+            padding: 8px 10px !important;
+
+            background: #252527 !important;
+            color: #ffffff !important;
+
+            border-right: 1px solid #3a3a3c !important;
+            border-bottom: 1px solid #48484a !important;
+
+            text-align: center !important;
+            vertical-align: middle !important;
+
+            font-weight: 700 !important;
+            white-space: nowrap !important;
+
+            cursor: text !important;
+        }
+
+        .amb-table th:last-child {
+            border-right: 0 !important;
+        }
+
+        .amb-table td {
+            padding: 7px 10px !important;
+
+            background: #18181a !important;
+            color: #e5e5ea !important;
+
+            border-right: 1px solid #2c2c2e !important;
+            border-bottom: 1px solid #2c2c2e !important;
+
+            text-align: center !important;
+            vertical-align: middle !important;
+
+            cursor: text !important;
+        }
+
+        .amb-table td:last-child {
+            border-right: 0 !important;
+        }
+
+        .amb-table tbody tr:last-child td {
+            border-bottom: 0 !important;
+        }
+
+        .amb-table tbody tr:nth-child(even) td {
+            background: #1e1e20 !important;
+        }
+
+        .amb-table tbody tr:hover td {
+            background: #29292c !important;
+        }
+
+        .amb-different-date {
+            color: #ff6961 !important;
+            font-weight: 700 !important;
+        }
+
+        .amb-close-hint {
+            margin-top: 20px !important;
+            color: #8e8e93 !important;
+            font-size: 12px !important;
+        }
+    `;
+
+    document.head.appendChild(style);
+
+    function addElement(content, tag, parent, className = '') {
+        const element = document.createElement(tag);
+
+        if (content !== undefined && content !== null) {
+            element.textContent = String(content);
+        }
+
+        if (className) {
+            element.className = className;
+        }
+
+        parent.appendChild(element);
+
+        return element;
     }
 
-    addSimple('Press ESC to close', 'p', results)
-  } catch (e) {
-    alert(e)
-    close()
-  }
-}
+    async function fetchText(url, options = {}) {
+        if (typeof GM_xmlhttpRequest === 'function') {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: options.method || 'GET',
+                    url,
+                    headers: options.headers || {},
+                    data: options.body,
+                    responseType: 'text',
 
-const clickMe = addSimple('', 'div', document.body)
-clickMe.style.position = 'absolute'
-clickMe.style.width = '15px'
-clickMe.style.height = '15px'
-clickMe.style.top = 0
-clickMe.style.left = 0
-clickMe.style.background = 'green'
-clickMe.style.cursor = 'pointer'
-clickMe.style.zIndex = 2147483647
-clickMe.addEventListener('click', getDatums)
+                    onload(response) {
+                        if (
+                            response.status === 0 ||
+                            (response.status >= 200 && response.status < 300)
+                        ) {
+                            resolve(
+                                response.responseText ??
+                                response.response ??
+                                ''
+                            );
+                        } else {
+                            reject(
+                                new Error(
+                                    `HTTP ${response.status} ${response.statusText || ''}`.trim()
+                                )
+                            );
+                        }
+                    },
 
-})()
+                    onerror(error) {
+                        reject(
+                            new Error(
+                                error?.error ||
+                                error?.statusText ||
+                                'Network request failed'
+                            )
+                        );
+                    },
+
+                    ontimeout() {
+                        reject(new Error('Request timed out'));
+                    }
+                });
+            });
+        }
+
+        const fetchOptions = {
+            ...options,
+            headers: {
+                ...(options.headers || {})
+            }
+        };
+
+        delete fetchOptions.headers.Origin;
+        delete fetchOptions.headers.origin;
+
+        const response = await fetch(url, fetchOptions);
+
+        if (!response.ok) {
+            throw new Error(
+                `HTTP ${response.status} ${response.statusText}`
+            );
+        }
+
+        return response.text();
+    }
+
+    async function getAppleMusicToken() {
+        if (token) {
+            return token;
+        }
+
+        const scripts = [
+            ...document.querySelectorAll('script[src][crossorigin]')
+        ];
+
+        if (!scripts.length) {
+            throw new Error(
+                'Could not find Apple Music configuration script'
+            );
+        }
+
+        const tokenRegex =
+            /["'](eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)["']/;
+
+        let lastError = null;
+
+        for (const script of scripts) {
+            try {
+                const source = await fetchText(script.src);
+                const match = source.match(tokenRegex);
+
+                if (match) {
+                    token = match[1];
+                    return token;
+                }
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        throw new Error(
+            lastError
+                ? `Could not find Apple Music token: ${lastError.message}`
+                : 'Could not find Apple Music token'
+        );
+    }
+
+    function formatValue(value) {
+        return Array.isArray(value)
+            ? value.join(', ')
+            : value;
+    }
+
+    function addMetadata(parent, label, value) {
+        if (
+            value === undefined ||
+            value === null ||
+            value === ''
+        ) {
+            return;
+        }
+
+        addElement(
+            `${label}: ${formatValue(value)}`,
+            'p',
+            parent
+        );
+    }
+
+    async function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+
+        const textarea = document.createElement('textarea');
+
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-999999px';
+        textarea.style.top = '-999999px';
+
+        document.body.appendChild(textarea);
+
+        textarea.focus();
+        textarea.select();
+
+        const success = document.execCommand('copy');
+
+        textarea.remove();
+
+        if (!success) {
+            throw new Error('Could not copy text to clipboard');
+        }
+    }
+
+    function createCopyISRCButton(parent, tracks) {
+        const isrcs = tracks
+            .map(track => track.isrc)
+            .filter(Boolean);
+
+        if (!isrcs.length) {
+            return;
+        }
+
+        const actions = addElement(
+            '',
+            'div',
+            parent,
+            'amb-actions'
+        );
+
+        const button = addElement(
+            'Copy ISRCs',
+            'button',
+            actions,
+            'amb-copy-button'
+        );
+
+        button.type = 'button';
+
+        button.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            try {
+                await copyToClipboard(isrcs.join('\n'));
+
+                button.textContent = 'Copied!';
+                button.classList.add('amb-copied');
+
+                setTimeout(() => {
+                    button.textContent = 'Copy ISRCs';
+                    button.classList.remove('amb-copied');
+                }, 1200);
+            } catch (error) {
+                console.error(
+                    '[Apple Music Barcodes/ISRCs]',
+                    error
+                );
+
+                button.textContent = 'Copy failed';
+
+                setTimeout(() => {
+                    button.textContent = 'Copy ISRCs';
+                }, 1500);
+            }
+        });
+    }
+
+    async function getDatums() {
+        if (activeResults) {
+            activeResults.remove();
+            activeResults = null;
+        }
+
+        let results = null;
+
+        const escListener = event => {
+            if (event.key === 'Escape') {
+                close();
+            }
+        };
+
+        const close = () => {
+            document.removeEventListener(
+                'keydown',
+                escListener
+            );
+
+            if (results) {
+                results.remove();
+            }
+
+            if (activeResults === results) {
+                activeResults = null;
+            }
+        };
+
+        try {
+            results = addElement(
+                'Loading, press ESC to close...',
+                'div',
+                document.body,
+                'amb-overlay'
+            );
+
+            activeResults = results;
+
+            const stopPropagation = event => {
+                event.stopPropagation();
+            };
+
+            results.addEventListener(
+                'pointerdown',
+                stopPropagation
+            );
+
+            results.addEventListener(
+                'pointerup',
+                stopPropagation
+            );
+
+            results.addEventListener(
+                'mousedown',
+                stopPropagation
+            );
+
+            results.addEventListener(
+                'mouseup',
+                stopPropagation
+            );
+
+            results.addEventListener(
+                'click',
+                stopPropagation
+            );
+
+            results.addEventListener(
+                'dblclick',
+                stopPropagation
+            );
+
+            document.addEventListener(
+                'keydown',
+                escListener
+            );
+
+            const parts = location.pathname
+                .split('/')
+                .filter(Boolean);
+
+            const country = parts[0];
+            const entryType = parts[1];
+
+            const albumId = [...parts]
+                .reverse()
+                .find(part => /^\d+$/.test(part));
+
+            if (!country || !entryType || !albumId) {
+                throw new Error(
+                    'Could not determine Apple Music country, entry type, or ID from this page'
+                );
+            }
+
+            if (
+                ![
+                    'album',
+                    'music-video'
+                ].includes(entryType)
+            ) {
+                throw new Error(
+                    `Unsupported Apple Music page type: ${entryType}`
+                );
+            }
+
+            const appleToken =
+                await getAppleMusicToken();
+
+            const apiType =
+                entryType === 'music-video'
+                    ? 'music-videos'
+                    : 'albums';
+
+            const url =
+                `${BASE_URL}/catalog/${country}/${apiType}/${albumId}`;
+
+            const response = await fetchText(
+                url,
+                {
+                    method: 'GET',
+                    mode: 'cors',
+                    credentials: 'include',
+
+                    headers: {
+                        Authorization:
+                            `Bearer ${appleToken}`,
+
+                        Origin:
+                            new URL(BASE_URL).origin
+                    }
+                }
+            );
+
+            const json = JSON.parse(response);
+
+            if (json.errors?.length) {
+                throw new Error(
+                    json.errors
+                        .map(error =>
+                            error.detail ||
+                            error.title ||
+                            error.code ||
+                            'Apple Music API error'
+                        )
+                        .join('; ')
+                );
+            }
+
+            const albumsData = json.data;
+
+            if (!Array.isArray(albumsData)) {
+                throw new Error(
+                    'Invalid response from Apple Music'
+                );
+            }
+
+            const albums = [];
+
+            for (
+                const albumData of albumsData.filter(
+                    item => item.type === 'albums'
+                )
+            ) {
+                const attributes =
+                    albumData.attributes || {};
+
+                const album = {
+                    name:
+                        attributes.name,
+
+                    artist:
+                        attributes.artistName,
+
+                    releaseDate:
+                        attributes.releaseDate,
+
+                    label:
+                        attributes.recordLabel,
+
+                    barcode:
+                        attributes.upc,
+
+                    isMasteredForItunes:
+                        attributes.isMasteredForItunes,
+
+                    audio:
+                        attributes.audioTraits,
+
+                    copyright:
+                        attributes.copyright,
+
+                    tracks: [],
+                    differentDates: false
+                };
+
+                const trackData =
+                    albumData.relationships
+                        ?.tracks
+                        ?.data || [];
+
+                let tracksHaveDates = false;
+
+                for (const trackItem of trackData) {
+                    const trackAttributes =
+                        trackItem.attributes || {};
+
+                    const track = {
+                        name:
+                            trackAttributes.name,
+
+                        artist:
+                            trackAttributes.artistName,
+
+                        composer:
+                            trackAttributes.composerName,
+
+                        disc:
+                            trackAttributes.discNumber,
+
+                        track:
+                            trackAttributes.trackNumber,
+
+                        isrc:
+                            trackAttributes.isrc,
+
+                        releaseDate:
+                            trackAttributes.releaseDate
+                    };
+
+                    if (track.releaseDate) {
+                        tracksHaveDates = true;
+
+                        if (
+                            track.releaseDate !==
+                            album.releaseDate
+                        ) {
+                            album.differentDates = true;
+                        }
+                    }
+
+                    album.tracks.push(track);
+                }
+
+                if (!tracksHaveDates) {
+                    album.differentDates = false;
+                }
+
+                albums.push(album);
+            }
+
+            for (
+                const videoData of albumsData.filter(
+                    item =>
+                        item.type ===
+                        'music-videos'
+                )
+            ) {
+                const attributes =
+                    videoData.attributes || {};
+
+                albums.push({
+                    name:
+                        attributes.name,
+
+                    artist:
+                        attributes.artistName,
+
+                    releaseDate:
+                        attributes.releaseDate,
+
+                    tracks: [
+                        {
+                            name:
+                                attributes.name,
+
+                            artist:
+                                attributes.artistName,
+
+                            disc: 1,
+                            track: 1,
+
+                            isrc:
+                                attributes.isrc,
+
+                            releaseDate:
+                                attributes.releaseDate
+                        }
+                    ],
+
+                    differentDates: false
+                });
+            }
+
+            if (!albums.length) {
+                throw new Error(
+                    'No albums or music videos found'
+                );
+            }
+
+            results.textContent = '';
+
+            for (const album of albums) {
+                addElement(
+                    album.name || '',
+                    'h1',
+                    results
+                );
+
+                addElement(
+                    album.artist || '',
+                    'h2',
+                    results
+                );
+
+                const albumDate = addElement(
+                    `Release Date: ${album.releaseDate || ''}`,
+                    'p',
+                    results
+                );
+
+                if (album.differentDates) {
+                    albumDate.appendChild(
+                        document.createTextNode(' ')
+                    );
+
+                    addElement(
+                        '(Some track dates differ)',
+                        'span',
+                        albumDate,
+                        'amb-warning'
+                    );
+                }
+
+                addMetadata(
+                    results,
+                    'Label',
+                    album.label
+                );
+
+                addMetadata(
+                    results,
+                    'Barcode',
+                    album.barcode
+                );
+
+                addMetadata(
+                    results,
+                    'Mastered for iTunes',
+                    album.isMasteredForItunes
+                );
+
+                addMetadata(
+                    results,
+                    'Audio',
+                    album.audio
+                );
+
+                addMetadata(
+                    results,
+                    'Copyright',
+                    album.copyright
+                );
+
+                const linkContainer =
+                    addElement(
+                        '',
+                        'p',
+                        results
+                    );
+
+                const kepstinLink =
+                    addElement(
+                        "Submit to kepstin's MagicISRC",
+                        'a',
+                        linkContainer
+                    );
+
+                const params =
+                    new URLSearchParams();
+
+                album.tracks.forEach(
+                    (track, index) => {
+                        if (track.isrc) {
+                            params.set(
+                                `isrc${index + 1}`,
+                                track.isrc
+                            );
+                        }
+                    }
+                );
+
+                kepstinLink.href =
+                    `https://magicisrc.kepstin.ca/?${params.toString()}`;
+
+                kepstinLink.target = '_blank';
+
+                kepstinLink.rel =
+                    'noopener noreferrer';
+
+                kepstinLink.addEventListener(
+                    'click',
+                    event => {
+                        event.preventDefault();
+                        event.stopPropagation();
+
+                        window.open(
+                            kepstinLink.href,
+                            '_blank',
+                            'noopener'
+                        );
+                    }
+                );
+
+                createCopyISRCButton(
+                    results,
+                    album.tracks
+                );
+
+                const hasMultipleDiscs =
+                    album.tracks.some(
+                        track =>
+                            track.disc !== undefined &&
+                            track.disc !== 1
+                    );
+
+                const hasComposers =
+                    album.tracks.some(
+                        track =>
+                            Boolean(track.composer)
+                    );
+
+                const table =
+                    addElement(
+                        '',
+                        'table',
+                        results,
+                        'amb-table'
+                    );
+
+                const thead =
+                    addElement(
+                        '',
+                        'thead',
+                        table
+                    );
+
+                const headerRow =
+                    addElement(
+                        '',
+                        'tr',
+                        thead
+                    );
+
+                addElement(
+                    'Track',
+                    'th',
+                    headerRow
+                );
+
+                addElement(
+                    'Title',
+                    'th',
+                    headerRow
+                );
+
+                addElement(
+                    'Artist',
+                    'th',
+                    headerRow
+                );
+
+                if (hasComposers) {
+                    addElement(
+                        'Composer',
+                        'th',
+                        headerRow
+                    );
+                }
+
+                addElement(
+                    'ISRC',
+                    'th',
+                    headerRow
+                );
+
+                if (album.differentDates) {
+                    addElement(
+                        'Date',
+                        'th',
+                        headerRow
+                    );
+                }
+
+                const tbody =
+                    addElement(
+                        '',
+                        'tbody',
+                        table
+                    );
+
+                for (const track of album.tracks) {
+                    const row =
+                        addElement(
+                            '',
+                            'tr',
+                            tbody
+                        );
+
+                    const trackNumber =
+                        hasMultipleDiscs
+                            ? `${track.disc ?? ''}.${track.track ?? ''}`
+                            : track.track ?? '';
+
+                    addElement(
+                        trackNumber,
+                        'td',
+                        row
+                    );
+
+                    addElement(
+                        track.name ?? '',
+                        'td',
+                        row
+                    );
+
+                    addElement(
+                        track.artist ?? '',
+                        'td',
+                        row
+                    );
+
+                    if (hasComposers) {
+                        addElement(
+                            track.composer ?? '',
+                            'td',
+                            row
+                        );
+                    }
+
+                    addElement(
+                        track.isrc ?? '',
+                        'td',
+                        row
+                    );
+
+                    if (album.differentDates) {
+                        const trackDate =
+                            addElement(
+                                track.releaseDate ?? '',
+                                'td',
+                                row
+                            );
+
+                        if (
+                            track.releaseDate &&
+                            track.releaseDate !==
+                            album.releaseDate
+                        ) {
+                            trackDate.classList.add(
+                                'amb-different-date'
+                            );
+                        }
+                    }
+                }
+            }
+
+            addElement(
+                'Press ESC to close',
+                'p',
+                results,
+                'amb-close-hint'
+            );
+        } catch (error) {
+            close();
+
+            console.error(
+                '[Apple Music Barcodes/ISRCs]',
+                error
+            );
+
+            alert(
+                `Apple Music Barcodes/ISRCs error:\n\n${error.message || error}`
+            );
+        }
+    }
+
+    const clickMe = addElement(
+        '',
+        'button',
+        document.body,
+        'amb-button'
+    );
+
+    clickMe.type = 'button';
+
+    clickMe.title =
+        'Show Apple Music metadata';
+
+    clickMe.setAttribute(
+        'aria-label',
+        'Show Apple Music metadata'
+    );
+
+    clickMe.addEventListener(
+        'click',
+        getDatums
+    );
+})();
