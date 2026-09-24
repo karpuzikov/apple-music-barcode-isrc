@@ -1,13 +1,22 @@
 # Apple Music Barcodes/ISRCs
 
-Allows reading barcodes, ISRCs, and other metadata from Apple Music releases. Click the green sqaure in the upper-left corner of the page to display album metadata.
+Improved fork of [ToadKing/apple-music-barcode-isrc](https://github.com/ToadKing/apple-music-barcode-isrc).
 
-Some notes about the script:
-* It uses a hardcoded access token for Apple's music server. It's possible this can change at any time, and if it does the script will need to be updated for it. The quickest way to alert me of this is to make an issue on this repo.
-* I've ran into a couple of times during testing where I get locked out of the site for making too many requests. This appears as an infinite loading screen on the site. If that happens you have to wait a couple of minutes before you can access the site again.
+Allows reading barcodes, ISRCs, and other metadata from Apple Music release pages. Click the small green-outlined button in the upper-left corner of Apple Music to open the metadata panel.
 
-Tested with Violentmonkey in Firefox but should also work in Chrome.
+## Fork changes
+
+- Dark themed metadata panel
+- Selectable/copyable text
+- Centered Track, Title, Artist, Composer, ISRC, and Date columns
+- One-click **Copy ISRCs** button that copies all ISRCs, one per line
+- Improved styling and error handling
+- More robust Apple Music token detection
 
 ## Installing
 
-Install [the script](https://github.com/ToadKing/apple-music-barcode-isrc/raw/master/apple-music-barcode-isrc.user.js) using your prefered userscript manager.
+Install [the userscript](https://raw.githubusercontent.com/karpuzikov/apple-music-barcode-isrc/master/apple-music-barcode-isrc.user.js) with Tampermonkey, Violentmonkey, or another compatible userscript manager.
+
+## Upstream
+
+Original project: [ToadKing/apple-music-barcode-isrc](https://github.com/ToadKing/apple-music-barcode-isrc)
