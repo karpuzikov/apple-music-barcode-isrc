@@ -2,7 +2,7 @@
 // @name          Apple Music Barcodes/ISRCs
 // @namespace     applemusic.barcode.isrc
 // @description   Get Barcodes/ISRCs/etc. from Apple Music pages
-// @version       0.25
+// @version       0.26
 // @match         https://music.apple.com/*
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
@@ -237,13 +237,18 @@
         }
 
         .amb-table .amb-col-title,
-        .amb-table .amb-col-artist {
+        .amb-table .amb-col-artist,
+        .amb-table .amb-col-composer {
             text-align: left !important;
         }
 
         .amb-table .amb-col-track,
         .amb-table .amb-col-isrc {
             text-align: center !important;
+        }
+
+        .amb-table:not(.amb-show-composer) .amb-col-composer {
+            display: none !important;
         }
 
         .amb-table tbody tr:last-child td {
@@ -496,6 +501,49 @@
                     button.textContent = 'Copy ISRCs';
                 }, 1500);
             }
+        });
+    }
+
+    function createComposerToggleButton(parent, table) {
+        let actions = table.previousElementSibling;
+
+        if (!actions || !actions.classList.contains('amb-actions')) {
+            actions = addElement(
+                '',
+                'div',
+                parent,
+                'amb-actions'
+            );
+
+            parent.insertBefore(actions, table);
+        }
+
+        const button = addElement(
+            'Show Composer',
+            'button',
+            actions,
+            'amb-copy-button'
+        );
+
+        button.type = 'button';
+        button.setAttribute('aria-pressed', 'false');
+
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const visible = table.classList.toggle(
+                'amb-show-composer'
+            );
+
+            button.textContent = visible
+                ? 'Hide Composer'
+                : 'Show Composer';
+
+            button.setAttribute(
+                'aria-pressed',
+                visible ? 'true' : 'false'
+            );
         });
     }
 
@@ -939,6 +987,13 @@
                         'amb-table'
                     );
 
+                if (hasComposers) {
+                    createComposerToggleButton(
+                        results,
+                        table
+                    );
+                }
+
                 const thead =
                     addElement(
                         '',
@@ -978,7 +1033,8 @@
                     addElement(
                         'Composer',
                         'th',
-                        headerRow
+                        headerRow,
+                        'amb-col-composer'
                     );
                 }
 
@@ -1042,7 +1098,8 @@
                         addElement(
                             track.composer ?? '',
                             'td',
-                            row
+                            row,
+                            'amb-col-composer'
                         );
                     }
 
