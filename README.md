@@ -8,7 +8,8 @@ Allows reading barcodes, ISRCs, and other metadata from Apple Music release page
 
 - Dark themed metadata panel
 - Selectable/copyable text
-- Column alignment: Track and ISRC centered; Title and Artist left-aligned; Composer and Date centered
+- Column alignment: Track and ISRC centered; Title, Artist, and Composer left-aligned
+- Composer column hidden by default with a Show Composer / Hide Composer button
 - One-click **Copy ISRCs** button that copies all ISRCs, one per line
 - Improved styling and error handling
 - More robust Apple Music token detection
