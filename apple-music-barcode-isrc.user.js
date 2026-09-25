@@ -2,7 +2,7 @@
 // @name          Apple Music Barcodes/ISRCs
 // @namespace     applemusic.barcode.isrc
 // @description   Get Barcodes/ISRCs/etc. from Apple Music pages
-// @version       0.24
+// @version       0.25
 // @match         https://music.apple.com/*
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
@@ -234,6 +234,16 @@
 
         .amb-table td:last-child {
             border-right: 0 !important;
+        }
+
+        .amb-table .amb-col-title,
+        .amb-table .amb-col-artist {
+            text-align: left !important;
+        }
+
+        .amb-table .amb-col-track,
+        .amb-table .amb-col-isrc {
+            text-align: center !important;
         }
 
         .amb-table tbody tr:last-child td {
@@ -946,19 +956,22 @@
                 addElement(
                     'Track',
                     'th',
-                    headerRow
+                    headerRow,
+                    'amb-col-track'
                 );
 
                 addElement(
                     'Title',
                     'th',
-                    headerRow
+                    headerRow,
+                    'amb-col-title'
                 );
 
                 addElement(
                     'Artist',
                     'th',
-                    headerRow
+                    headerRow,
+                    'amb-col-artist'
                 );
 
                 if (hasComposers) {
@@ -972,7 +985,8 @@
                 addElement(
                     'ISRC',
                     'th',
-                    headerRow
+                    headerRow,
+                    'amb-col-isrc'
                 );
 
                 if (album.differentDates) {
@@ -1006,19 +1020,22 @@
                     addElement(
                         trackNumber,
                         'td',
-                        row
+                        row,
+                        'amb-col-track'
                     );
 
                     addElement(
                         track.name ?? '',
                         'td',
-                        row
+                        row,
+                        'amb-col-title'
                     );
 
                     addElement(
                         track.artist ?? '',
                         'td',
-                        row
+                        row,
+                        'amb-col-artist'
                     );
 
                     if (hasComposers) {
@@ -1032,7 +1049,8 @@
                     addElement(
                         track.isrc ?? '',
                         'td',
-                        row
+                        row,
+                        'amb-col-isrc'
                     );
 
                     if (album.differentDates) {
