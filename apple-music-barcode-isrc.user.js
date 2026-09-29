@@ -533,16 +533,10 @@
             return;
         }
 
-        const hasMultipleDiscs = tracks.some(
-            track =>
-                track.disc !== undefined &&
-                Number(track.disc) > 1
-        );
-
         const lines = tracks.map((track, index) => {
-            const trackNumber = hasMultipleDiscs
-                ? `${track.disc ?? 1}.${track.track ?? index + 1}`
-                : String(track.track ?? index + 1);
+            const trackNumber = String(
+                track.track ?? index + 1
+            );
 
             const title = normalizeTrackParserValue(
                 track.name
