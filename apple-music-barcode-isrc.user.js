@@ -2,7 +2,7 @@
 // @name          Apple Music Barcodes/ISRCs
 // @namespace     applemusic.barcode.isrc
 // @description   Get Barcodes/ISRCs/etc. from Apple Music pages
-// @version       0.26
+// @version       0.27
 // @match         https://music.apple.com/*
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
@@ -450,6 +450,24 @@
         }
     }
 
+    function getOrCreateActions(parent) {
+        const existing = parent.lastElementChild;
+
+        if (
+            existing &&
+            existing.classList.contains('amb-actions')
+        ) {
+            return existing;
+        }
+
+        return addElement(
+            '',
+            'div',
+            parent,
+            'amb-actions'
+        );
+    }
+
     function createCopyISRCButton(parent, tracks) {
         const isrcs = tracks
             .map(track => track.isrc)
@@ -459,12 +477,7 @@
             return;
         }
 
-        const actions = addElement(
-            '',
-            'div',
-            parent,
-            'amb-actions'
-        );
+        const actions = getOrCreateActions(parent);
 
         const button = addElement(
             'Copy ISRCs',
@@ -499,6 +512,84 @@
 
                 setTimeout(() => {
                     button.textContent = 'Copy ISRCs';
+                }, 1500);
+            }
+        });
+    }
+
+    function normalizeTrackParserValue(value) {
+        return String(value ?? '')
+            .replace(/[\\r\\n\\t]+/g, ' ')
+            .replace(/\\s+/g, ' ')
+            .trim();
+    }
+
+    function createCopyTracklistButton(
+        parent,
+        tracks,
+        fallbackArtist = ''
+    ) {
+        if (!tracks.length) {
+            return;
+        }
+
+        const hasMultipleDiscs = tracks.some(
+            track =>
+                track.disc !== undefined &&
+                Number(track.disc) > 1
+        );
+
+        const lines = tracks.map((track, index) => {
+            const trackNumber = hasMultipleDiscs
+                ? `${track.disc ?? 1}.${track.track ?? index + 1}`
+                : String(track.track ?? index + 1);
+
+            const title = normalizeTrackParserValue(
+                track.name
+            );
+
+            const artist = normalizeTrackParserValue(
+                track.artist || fallbackArtist
+            );
+
+            return `${trackNumber}. ${title} - ${artist}`;
+        });
+
+        const actions = getOrCreateActions(parent);
+
+        const button = addElement(
+            'Copy Tracklist',
+            'button',
+            actions,
+            'amb-copy-button'
+        );
+
+        button.type = 'button';
+
+        button.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            try {
+                await copyToClipboard(lines.join('\\n'));
+
+                button.textContent = 'Copied!';
+                button.classList.add('amb-copied');
+
+                setTimeout(() => {
+                    button.textContent = 'Copy Tracklist';
+                    button.classList.remove('amb-copied');
+                }, 1200);
+            } catch (error) {
+                console.error(
+                    '[Apple Music Barcodes/ISRCs]',
+                    error
+                );
+
+                button.textContent = 'Copy failed';
+
+                setTimeout(() => {
+                    button.textContent = 'Copy Tracklist';
                 }, 1500);
             }
         });
@@ -964,6 +1055,12 @@
                 createCopyISRCButton(
                     results,
                     album.tracks
+                );
+
+                createCopyTracklistButton(
+                    results,
+                    album.tracks,
+                    album.artist
                 );
 
                 const hasMultipleDiscs =
