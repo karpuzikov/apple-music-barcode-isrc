@@ -11,6 +11,7 @@ Allows reading barcodes, ISRCs, and other metadata from Apple Music release page
 - Column alignment: Track and ISRC centered; Title, Artist, and Composer left-aligned
 - Composer column hidden by default with a Show Composer / Hide Composer button
 - One-click **Copy ISRCs** button that copies all ISRCs, one per line
+- One-click **Copy Tracklist** button that copies MusicBrainz Track Parser format: `No. Title - Artist`
 - Improved styling and error handling
 - More robust Apple Music token detection
 
