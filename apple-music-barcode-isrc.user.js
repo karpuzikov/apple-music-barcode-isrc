@@ -519,8 +519,8 @@
 
     function normalizeTrackParserValue(value) {
         return String(value ?? '')
-            .replace(/[\\r\\n\\t]+/g, ' ')
-            .replace(/\\s+/g, ' ')
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/\s+/g, ' ')
             .trim();
     }
 
@@ -571,7 +571,7 @@
             event.stopPropagation();
 
             try {
-                await copyToClipboard(lines.join('\\n'));
+                await copyToClipboard(lines.join('\n'));
 
                 button.textContent = 'Copied!';
                 button.classList.add('amb-copied');
