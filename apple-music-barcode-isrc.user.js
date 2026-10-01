@@ -2,7 +2,7 @@
 // @name          Apple Music Barcodes/ISRCs
 // @namespace     applemusic.barcode.isrc
 // @description   Get Barcodes/ISRCs/etc. from Apple Music pages
-// @version       0.28
+// @version       0.29
 // @match         https://music.apple.com/*
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
@@ -245,6 +245,7 @@
         }
 
         .amb-table .amb-col-track,
+        .amb-table .amb-col-length,
         .amb-table .amb-col-isrc {
             text-align: center !important;
         }
@@ -526,6 +527,29 @@
             .trim();
     }
 
+    function formatDuration(durationInMillis) {
+        const milliseconds = Number(durationInMillis);
+
+        if (
+            !Number.isFinite(milliseconds) ||
+            milliseconds < 0
+        ) {
+            return '';
+        }
+
+        const totalSeconds = Math.round(
+            milliseconds / 1000
+        );
+
+        const minutes = Math.floor(
+            totalSeconds / 60
+        );
+
+        const seconds = totalSeconds % 60;
+
+        return `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+
     function createCopyTracklistButton(
         parent,
         tracks,
@@ -548,7 +572,11 @@
                 track.artist || fallbackArtist
             );
 
-            return `${trackNumber}. ${title} - ${artist}`;
+            const length = formatDuration(
+                track.durationInMillis
+            );
+
+            return `${trackNumber}. ${title} - ${artist}${length ? ` (${length})` : ''}`;
         });
 
         const actions = getOrCreateActions(parent);
@@ -860,6 +888,9 @@
                         isrc:
                             trackAttributes.isrc,
 
+                        durationInMillis:
+                            trackAttributes.durationInMillis,
+
                         releaseDate:
                             trackAttributes.releaseDate
                     };
@@ -918,6 +949,9 @@
 
                             isrc:
                                 attributes.isrc,
+
+                            durationInMillis:
+                                attributes.durationInMillis,
 
                             releaseDate:
                                 attributes.releaseDate
@@ -1122,6 +1156,13 @@
                     'amb-col-artist'
                 );
 
+                addElement(
+                    'Length',
+                    'th',
+                    headerRow,
+                    'amb-col-length'
+                );
+
                 if (hasComposers) {
                     addElement(
                         'Composer',
@@ -1185,6 +1226,15 @@
                         'td',
                         row,
                         'amb-col-artist'
+                    );
+
+                    addElement(
+                        formatDuration(
+                            track.durationInMillis
+                        ),
+                        'td',
+                        row,
+                        'amb-col-length'
                     );
 
                     if (hasComposers) {
