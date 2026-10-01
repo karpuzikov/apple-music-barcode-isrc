@@ -7,8 +7,8 @@
 // @exclude-match https://music.apple.com/includes/commerce/fetch-proxy.html
 // @run-at        document-idle
 // @grant         GM_xmlhttpRequest
-// @updateURL     https://raw.githubusercontent.com/karpuzikov/apple-music-barcode-isrc/master/apple-music-barcode-isrc.user.js
-// @downloadURL   https://raw.githubusercontent.com/karpuzikov/apple-music-barcode-isrc/master/apple-music-barcode-isrc.user.js
+// @updateURL     https://raw.githubusercontent.com/karpuzikov/apple-music-barcode-isrc/master/apple-music-barcode-isrc.user.js?v=0.29
+// @downloadURL   https://raw.githubusercontent.com/karpuzikov/apple-music-barcode-isrc/master/apple-music-barcode-isrc.user.js?v=0.29
 // ==/UserScript==
 
 (async () => {
